@@ -6,6 +6,20 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
+# Quarto internal folders
+/.quarto/
+/dashboard/.quarto/
+
+# Editor/OS temporaries
+.DS_Store
+*.quarto_ipynb*
+
+# Jupyter & Python
+.ipynb_checkpoints/
+__pycache__/
+
+# /docs/
+
+# Virtual environments  
 .venv
 .DS_Store
