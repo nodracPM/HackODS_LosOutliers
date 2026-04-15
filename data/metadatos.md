@@ -1,3 +1,8 @@
+### Información complementaria
+
+**Artículo acerca del derrame de petróleo en 2026:**https://www.greenpeace.org/mexico/informacion-prensa/62546/
+
+**Sitios afectados derrame de petróleo en 2026:** https://www.google.com/maps/d/u/0/viewer?mid=1Ku4wk-WcKmPcrna08enfELqsr5pp9LA&ll=22.865042981462132%2C-102.49244999494258&z=5
 
 
 ### Dataset 1: Fugas y derrames de hidrocarburos por organismo subsidiario de PEMEX
