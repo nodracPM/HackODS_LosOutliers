@@ -1,48 +1,266 @@
 ---
-title: "Worldwide Development"
-author: "Gapminder Analytics"
-format: dashboard
+title: "Marea de Silencio"
+author: "Los Outliers"
+format:
+  dashboard:
+    page-layout: full
 ---
 
 ```{python}
+#| echo: false
+import numpy as np
+import pandas as pd
 import plotly.express as px
-df = px.data.gapminder()
-df = df[df['continent'] != 'Oceania']
+from itables import show
+
+PALETA = {
+    "presupuesto": "#2E8B57",
+    "multa": "#F2A03D",
+    "conservador": "#E55B3C",
+    "integral": "#8B1E3F",
+    "indice": "#2A6FBB",
+}
 ```
 
-# Indicators
+# Pregunta
 
-## Row {height=60%}
+¿Cuál es el verdadero costo de los derrames de petróleo en México?
+
+Marea de Silencio nace del grito de auxilio de las comunidades costeras y de la vida marina tras la emergencia de 2026 en el Golfo de México. El punto de partida no es solo ambiental: también es social, económico y de justicia intergeneracional.
+
+Durante años, los derrames han sido tratados como eventos aislados. Aquí se leen como una trayectoria acumulada de pasivos, donde cada tonelada no atendida de forma integral se traduce en costos futuros más altos para ecosistemas, pesca, turismo y salud pública.
+
+La pregunta central busca hacer visible esa brecha: **daño real vs inversión pública vs capacidad legal de sanción**.
+
+# Método
+
+Se integran tres fuentes para construir una narrativa cuantificable del daño:
+
+- SEMARNAT: volumen reportado de derrames.
+- INEGI-SCEEM: gasto en protección ambiental.
+- Referencias EPA/ITOPF: costos de remediación por tonelada.
+
+Supuestos clave:
+
+- ITOPF conservador: 5,000 USD por tonelada.
+- EPA integral: 84,892.50 USD por tonelada.
+- Tipo de cambio: 20 MXN por USD.
+- Tope legal LFRA: 65.1 millones de MXN.
+
+Con este marco, los indicadores no se leen como cifras sueltas: muestran el tamaño de la deuda ambiental y la distancia entre la respuesta institucional y la magnitud del impacto.
 
 ```{python}
-#| title: GDP and Life Expectancy 
-px.scatter(
-  df, x="gdpPercap", y="lifeExp", 
-  animation_frame="year", animation_group="country",
-  size="pop", color="continent", hover_name="country", 
-  facet_col="continent", log_x=True, size_max=45, 
-  range_x=[100,100000], range_y=[25,90]
+#| echo: false
+#| warning: false
+df_semarnat = pd.read_csv("../data/d2_industri02_08.csv", encoding="latin-1")
+df_semarnat["Año"] = df_semarnat["Año"].ffill().astype(int)
+df_semarnat["Organismo Subsidiario"] = df_semarnat["Organismo Subsidiario"].astype(str).str.strip()
+
+df_semarnat_totales = df_semarnat[
+    df_semarnat["Organismo Subsidiario"].str.contains("total", case=False, na=False)
+].copy()
+df_semarnat_totales = df_semarnat_totales.drop(columns=["Organismo Subsidiario"])
+df_semarnat_totales["Cantidad reportada (toneladas)"] = (
+    df_semarnat_totales["Cantidad reportada (toneladas)"].astype(str).str.replace(",", "", regex=True)
+)
+df_semarnat_totales["Cantidad reportada (toneladas)"] = pd.to_numeric(
+    df_semarnat_totales["Cantidad reportada (toneladas)"], errors="coerce"
+)
+df_semarnat_totales = df_semarnat_totales.rename(columns={"Año": "año"})
+df_semarnat_totales["año"] = df_semarnat_totales["año"].astype(int)
+
+df_raw_inegi = pd.read_csv("../data/SCEEM_20.csv", encoding="latin-1")
+df_melt = df_raw_inegi.melt(id_vars=["Concepto"], var_name="Columna_Fea", value_name="Valor")
+df_melt[["año", "basura", "Sector"]] = df_melt["Columna_Fea"].str.split("|", expand=True)
+df_melt["año"] = pd.to_numeric(df_melt["año"].str.strip(), errors="coerce")
+df_melt["Valor"] = pd.to_numeric(
+    df_melt["Valor"].astype(str).str.replace(",", "", regex=True), errors="coerce"
+)
+
+df_gpa = df_melt[df_melt["Concepto"].str.contains("protección ambiental", case=False, na=False)].copy()
+df_inegi_limpio = df_gpa.groupby("año", as_index=False)["Valor"].sum()
+df_inegi_limpio = df_inegi_limpio.rename(columns={"Valor": "Gasto Protección Ambiental (Millones MXN)"})
+df_inegi_limpio["Multa Máxima LFRA (Millones MXN)"] = 65.1
+
+tipo_de_cambio = 20
+df_dashboard = df_semarnat_totales.copy()
+df_dashboard["Costo Limpieza ITOPF (Millones MXN)"] = (
+    df_dashboard["Cantidad reportada (toneladas)"] * 5000 * tipo_de_cambio
+) / 1_000_000
+df_dashboard["Costo Restauración EPA (Millones MXN)"] = (
+    df_dashboard["Cantidad reportada (toneladas)"] * 84892.50 * tipo_de_cambio
+) / 1_000_000
+
+df_triangulo = pd.merge(df_dashboard, df_inegi_limpio, on="año", how="inner")
+df_triangulo["Indice de insuficiencia"] = (
+    df_triangulo["Gasto Protección Ambiental (Millones MXN)"]
+    / df_triangulo["Costo Restauración EPA (Millones MXN)"]
 )
 ```
 
-## Row {height=40%}
+# Costo económico
+
+## Row {height=44%}
+
+### Brecha anual
 
 ```{python}
-#| title: Population
-px.area(df, x="year", y="pop", color="continent", line_group="country")
+#| echo: false
+df_brecha = df_triangulo[
+    [
+        "año",
+        "Gasto Protección Ambiental (Millones MXN)",
+        "Multa Máxima LFRA (Millones MXN)",
+        "Costo Limpieza ITOPF (Millones MXN)",
+        "Costo Restauración EPA (Millones MXN)",
+    ]
+].melt(id_vars="año", var_name="Métrica", value_name="Valor")
+
+colores_brecha = {
+    "Gasto Protección Ambiental (Millones MXN)": PALETA["presupuesto"],
+    "Multa Máxima LFRA (Millones MXN)": PALETA["multa"],
+    "Costo Limpieza ITOPF (Millones MXN)": PALETA["conservador"],
+    "Costo Restauración EPA (Millones MXN)": PALETA["integral"],
+}
+
+fig = px.bar(
+    df_brecha,
+    x="año",
+    y="Valor",
+    color="Métrica",
+    barmode="group",
+    color_discrete_map=colores_brecha,
+)
+
+fig.update_layout(
+    xaxis_title="Año",
+    yaxis_title="Millones de MXN (log)",
+    height=420,
+    template="plotly_white",
+    hovermode="x unified",
+    margin=dict(l=20, r=20, t=20, b=20),
+    legend=dict(
+        orientation="v",
+        yanchor="top",
+        y=0.98,
+        xanchor="left",
+        x=0.02,
+        bgcolor="rgba(255,255,255,0.7)",
+        font=dict(size=10),
+    ),
+)
+fig.update_yaxes(type="log")
+
+fig
 ```
 
+### Cobertura
 
 ```{python}
-#| title: Life Expectancy
-px.line(df, x="year", y="lifeExp", color="continent", line_group="country")
+#| echo: false
+fig_indice = px.line(
+    df_triangulo,
+    x="año",
+    y="Indice de insuficiencia",
+    markers=True,
+)
+fig_indice.update_traces(line=dict(color=PALETA["indice"], width=3), marker=dict(size=8))
+
+fig_indice.update_layout(
+    xaxis_title="Año",
+    yaxis_title="Proporción cubierta",
+    height=420,
+    template="plotly_white",
+    margin=dict(l=20, r=20, t=20, b=20),
+)
+
+fig_indice
 ```
 
-# Data
+# Daño ambiental
 
-![](gapminder.png) Learn more about the Gapminder dataset at <https://www.gapminder.org/data/documentation/>
+El inventario oficial muestra lo reparado y lo que sigue activo como pasivo ambiental.
+
+## Row {height=34%}
+
+### Inventario 2025
 
 ```{python}
-from itables import show
-show(df, showIndex = False)
+#| echo: false
+etiquetas = ["Sitios remediados", "Sitios contaminados activos"]
+valores = [1049, 1144]
+df_sitios = pd.DataFrame({"Tipo": etiquetas, "Valor": valores})
+
+fig_pie = px.pie(
+    df_sitios,
+    names="Tipo",
+    values="Valor",
+    hole=0.5,
+    color="Tipo",
+    color_discrete_map={
+        "Sitios remediados": PALETA["presupuesto"],
+        "Sitios contaminados activos": PALETA["integral"],
+    },
+)
+fig_pie.update_traces(textposition="inside", textinfo="percent")
+
+fig_pie.update_layout(
+    template="plotly_white",
+    height=360,
+    margin=dict(l=20, r=20, t=20, b=20),
+    showlegend=True,
+    legend=dict(orientation="h", yanchor="bottom", y=-0.1, xanchor="center", x=0.5),
+)
+
+fig_pie
+```
+
+### Indicador clave
+
+```{python}
+#| echo: false
+fig_kpi = px.scatter(
+    x=[0],
+    y=[0],
+    text=["1,114"],
+)
+fig_kpi.update_traces(
+    textposition="middle center",
+    textfont_size=58,
+    textfont_color=PALETA["integral"],
+    marker_size=1,
+)
+
+fig_kpi.update_layout(
+    template="plotly_white",
+    height=360,
+    margin=dict(l=20, r=20, t=20, b=20),
+    xaxis=dict(visible=False),
+    yaxis=dict(visible=False),
+)
+
+fig_kpi
+```
+
+[Visor oficial de SEMARNAT](https://geoportal.semarnat.gob.mx/arcgisp/apps/webappviewer/index.html?id=6633959897c14220b90f1b92a6e11840)
+
+# Datos abiertos
+
+Con esta integración, la deuda ambiental se vuelve medible y comparable en el tiempo.
+
+## Row {height=28%}
+
+```{python}
+#| echo: false
+columnas_finales = [
+    "año",
+    "Cantidad reportada (toneladas)",
+    "Gasto Protección Ambiental (Millones MXN)",
+    "Multa Máxima LFRA (Millones MXN)",
+    "Costo Limpieza ITOPF (Millones MXN)",
+    "Costo Restauración EPA (Millones MXN)",
+    "Indice de insuficiencia",
+]
+
+show(df_triangulo[columnas_finales].sort_values("año"), showIndex=False)
 ```
